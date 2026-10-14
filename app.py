@@ -1,5 +1,4 @@
 import json
-import uuid
 from datetime import datetime, timezone
 from pathlib import Path
 
@@ -18,7 +17,13 @@ def load_entries(file_path=DATA_FILE):
     if not isinstance(entries, list) or any(
         not isinstance(entry, dict)
         or not required_fields.issubset(entry)
-        or any(not isinstance(entry[field], str) for field in required_fields)
+        or not isinstance(entry["id"], int)
+        or isinstance(entry["id"], bool)
+        or entry["id"] < 1
+        or any(
+            not isinstance(entry[field], str)
+            for field in required_fields - {"id"}
+        )
         for entry in entries
     ):
         raise ValueError("The data file does not contain a valid list of entries.")
@@ -33,16 +38,22 @@ def save_entries(entries, file_path=DATA_FILE):
         data_file.write("\n")
 
 
-def make_entry(title, content):
+def next_entry_id(entries):
+    return max((entry["id"] for entry in entries), default=0) + 1
+
+
+def make_entry(title, content, entry_id):
     title = title.strip()
     content = content.strip()
     if not title:
         raise ValueError("Title cannot be empty.")
     if not content:
         raise ValueError("Information cannot be empty.")
+    if not isinstance(entry_id, int) or isinstance(entry_id, bool) or entry_id < 1:
+        raise ValueError("ID must be a positive integer.")
 
     return {
-        "id": uuid.uuid4().hex[:8],
+        "id": entry_id,
         "title": title,
         "content": content,
         "created_at": datetime.now(timezone.utc).isoformat(timespec="seconds"),
@@ -83,8 +94,8 @@ def run():
         if choice == "1":
             title = input("Title: ")
             content = input("Information: ")
-            entry = make_entry(title, content)
             entries = load_entries()
+            entry = make_entry(title, content, next_entry_id(entries))
             entries.append(entry)
             save_entries(entries)
             print(f"Saved as [{entry['id']}].")
@@ -96,8 +107,17 @@ def run():
         elif choice == "4":
             entries = load_entries()
             show_entries(entries)
-            entry_id = input("\nID to delete (or leave blank to cancel): ").strip()
+            if not entries:
+                continue
+            entry_id = input(
+                "\nID to delete (integer, or leave blank to cancel): "
+            ).strip()
             if not entry_id:
+                continue
+            try:
+                entry_id = int(entry_id)
+            except ValueError:
+                print("Please enter a valid integer ID.")
                 continue
             matching = [entry for entry in entries if entry["id"] == entry_id]
             if not matching:
